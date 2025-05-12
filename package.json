@@ -28,7 +28,7 @@
     "dev": "DEBUG=bot* dotenv -- nodemon -e ts -x ts-node src/bot.ts",
     "devWindows": "@powershell -Command $env:DEBUG='bot*';dotenv -- -- nodemon -e ts -x ts-node src/bot.ts",
     "build": "tsc",
-    "start": "NODE_ENV=production node dist/server.js",
+    "start": "NODE_ENV=production node dist/production.js",
     "server:dev": "DEBUG=bot* dotenv -- nodemon -e ts -x ts-node src/server.ts",
     "prettier": "prettier --write 'src/**/*.ts'",
     "lint": "tsc --noemit"
