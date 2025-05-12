@@ -164,8 +164,5 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
-export const config = {
-  runtime: "edge",
-};
-
-export default webhookCallback(bot, "std/http");
+// Export the webhook handler for Vercel
+export default webhookCallback(bot, "https");
