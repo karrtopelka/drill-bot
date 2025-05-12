@@ -45,12 +45,12 @@ title: string;
 authorNickname?: string;
 thumbnail: string;
 duration?: number; // in seconds
-sourceApiVersion?: "v1" | "v2" | "v3";
+sourceApiVersion?: "v1" | "v2" | "v3" | "tikwm";
 medias: Media[];
 }
 
 // These proxies are reliable and free - consider using your own proxy service for production
-const TIKTOK_API_PROXY_URL = process.env.TIKTOK_API_PROXY_URL || 'https://cors-anywhere.herokuapp.com/'; // For Downloader
+const TIKTOK_API_PROXY_URL = process.env.TIKTOK_API_PROXY_URL || 'https://corsproxy.io/?'; // For Downloader
 const MEDIA_PROXY_URL_TEMPLATE = process.env.MEDIA_PROXY_URL_TEMPLATE || 'https://corsproxy.io/?{URL}'; // For getBufferFromURL
 
 /**
@@ -70,11 +70,190 @@ for (const version of versionsToTry) {
       version: version,
       showOriginalResponse: false // Set to true for deeper debugging if needed
     };
+
+    // Special handling for proxy - if it's corsproxy.io style, we need to append the URL
     if (TIKTOK_API_PROXY_URL) {
-      options.proxy = TIKTOK_API_PROXY_URL;
-      logDebug(`Using proxy ${TIKTOK_API_PROXY_URL} for API ${version}`);
+      if (TIKTOK_API_PROXY_URL.includes('corsproxy.io')) {
+        // For corsproxy.io, we need to manually add the URL parameter
+        options.proxy = TIKTOK_API_PROXY_URL; // Will be handled specially by our modified code
+        logDebug(`Using corsproxy.io style proxy for API ${version}`);
+      } else {
+        // For traditional proxies like cors-anywhere
+        options.proxy = TIKTOK_API_PROXY_URL;
+        logDebug(`Using proxy ${TIKTOK_API_PROXY_URL} for API ${version}`);
+      }
     }
 
+    // For corsproxy.io formatting, manually create the URLs for direct fetch
+    // This is a workaround since the library doesn't handle this proxy format
+    if (options.proxy && options.proxy.includes('corsproxy.io')) {
+      // Custom implementation for corsproxy.io
+      let apiUrl;
+      switch(version) {
+        case 'v1':
+          apiUrl = `https://api.tiktokv.com/aweme/v1/feed/?aweme_id=${extractVideoId(originalUrl)}`;
+          break;
+        case 'v2':
+          apiUrl = `https://ssstik.io/api/1/fetch?url=${encodeURIComponent(originalUrl)}`;
+          break;
+        case 'v3':
+          apiUrl = `https://musicaldown.com/api/fetch?video_url=${encodeURIComponent(originalUrl)}`;
+          break;
+      }
+
+      if (apiUrl) {
+        const proxyUrl = `${options.proxy}${encodeURIComponent(apiUrl)}`;
+        logDebug(`Using direct fetch with proxy URL: ${proxyUrl.substring(0, 100)}...`);
+
+        const response = await fetch(proxyUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Referer': 'https://www.tiktok.com/'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`Proxy request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        // Use the same response format as the library expects
+        const mockResponse = {
+          status: "success",
+          message: "",
+          result: data
+        };
+
+        // Process the response as if it came from the library
+        if (mockResponse.status === "success" && mockResponse.result) {
+          logDebug(`Successfully fetched data using custom fetch for API ${version}`);
+          const medias: Media[] = [];
+          let title = "Unknown Title";
+          let id: string | undefined = undefined;
+          let thumbnail = "";
+          let duration: number | undefined = undefined;
+
+          // Process response based on API version
+          // This is simplified - you may need to adjust based on actual response formats
+          if (version === "v1" && typeof mockResponse.result === 'object') {
+            const result = mockResponse.result;
+            // Extract aweme_detail for v1 API
+            const awemeDetail = result.aweme_list?.[0] || {};
+            title = awemeDetail.desc || title;
+            id = awemeDetail.aweme_id;
+            authorNickname = awemeDetail.author?.nickname;
+            thumbnail = awemeDetail.video?.cover?.url_list?.[0] || "";
+            duration = awemeDetail.video?.duration;
+
+            // Add video URLs if available
+            if (awemeDetail.video?.play_addr?.url_list?.length) {
+              medias.push({
+                url: awemeDetail.video.play_addr.url_list[0],
+                quality: 'hd_v1_no_watermark',
+                extension: "mp4",
+                videoAvailable: true,
+                audioAvailable: true,
+                size: 0,
+                formattedSize: "N/A",
+                isWatermarked: false
+              });
+            }
+
+            // Add music if available
+            if (awemeDetail.music?.play_url?.url_list?.length) {
+              medias.push({
+                url: awemeDetail.music.play_url.url_list[0],
+                quality: 'audio_v1',
+                extension: "mp3",
+                videoAvailable: false,
+                audioAvailable: true,
+                size: 0,
+                formattedSize: "N/A"
+              });
+            }
+          } else if (version === "v2" && typeof mockResponse.result === 'object') {
+            // Simple handling for v2 (SSSTik) response
+            const result = mockResponse.result;
+            title = result.desc || title;
+            authorNickname = result.author?.nickname;
+
+            if (result.video) {
+              medias.push({
+                url: result.video,
+                quality: 'sd_v2_video',
+                extension: "mp4",
+                videoAvailable: true,
+                audioAvailable: true,
+                size: 0,
+                formattedSize: "N/A",
+                isWatermarked: false
+              });
+            }
+
+            if (result.music) {
+              medias.push({
+                url: result.music,
+                quality: 'audio_v2',
+                extension: "mp3",
+                videoAvailable: false,
+                audioAvailable: true,
+                size: 0,
+                formattedSize: "N/A"
+              });
+            }
+          } else if (version === "v3" && typeof mockResponse.result === 'object') {
+            // Simple handling for v3 (MusicalDown) response
+            const result = mockResponse.result;
+            title = result.desc || title;
+            authorNickname = result.author?.nickname;
+
+            if (result.video_hd) {
+              medias.push({
+                url: result.video_hd,
+                quality: 'hd_v3_no_watermark',
+                extension: "mp4",
+                videoAvailable: true,
+                audioAvailable: true,
+                size: 0,
+                formattedSize: "N/A",
+                isWatermarked: false
+              });
+            }
+
+            if (result.music) {
+              medias.push({
+                url: result.music,
+                quality: 'audio_v3',
+                extension: "mp3",
+                videoAvailable: false,
+                audioAvailable: true,
+                size: 0,
+                formattedSize: "N/A"
+              });
+            }
+          }
+
+          if (medias.length > 0) {
+            logDebug(`Successfully parsed ${medias.length} media items using custom fetch for API ${version}`);
+            return {
+              url: originalUrl,
+              id,
+              title,
+              authorNickname,
+              thumbnail,
+              duration,
+              sourceApiVersion: version,
+              medias,
+            };
+          } else {
+            logDebug(`Custom fetch for API ${version} succeeded but no media items found. Continuing...`);
+          }
+        }
+      }
+    }
+
+    // Use the library's Downloader function if custom fetch didn't return early
     const response = await Downloader(originalUrl, options);
 
     if (response && response.status === "success" && response.result) {
@@ -205,6 +384,111 @@ for (const version of versionsToTry) {
 }
 
 logError(`All API versions failed for ${originalUrl}. Last error:`, lastError);
+
+// Final fallback to TikWM API - this is often more reliable than the other methods
+try {
+  logDebug(`Attempting final fallback to tikwm.com API for ${originalUrl}`);
+
+  // TikWM URL param structure is different for vm.tiktok.com links
+  const isVmLink = originalUrl.includes('vm.tiktok.com');
+  const tikwmUrl = `https://corsproxy.io/?${encodeURIComponent(`https://www.tikwm.com/api/?${isVmLink ? 'url' : 'video_url'}=${encodeURIComponent(originalUrl)}`)}`;
+
+  const response = await fetch(tikwmUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'application/json, text/plain, */*',
+      'Referer': 'https://www.tikwm.com/'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`TikWM API request failed with status ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  if (data && data.code === 0 && data.data) {
+    logDebug(`Successfully fetched data using TikWM API fallback`);
+    const result = data.data;
+    const medias: Media[] = [];
+
+    // Add no-watermark video if available
+    if (result.play) {
+      medias.push({
+        url: result.play,
+        quality: 'hd_tikwm_no_watermark',
+        extension: "mp4",
+        videoAvailable: true,
+        audioAvailable: true,
+        size: 0,
+        formattedSize: "N/A",
+        isWatermarked: false
+      });
+    }
+
+    // Add watermarked video if available
+    if (result.wmplay) {
+      medias.push({
+        url: result.wmplay,
+        quality: 'hd_tikwm_watermark',
+        extension: "mp4",
+        videoAvailable: true,
+        audioAvailable: true,
+        size: 0,
+        formattedSize: "N/A",
+        isWatermarked: true
+      });
+    }
+
+    // Add music if available
+    if (result.music) {
+      medias.push({
+        url: result.music,
+        quality: 'audio_tikwm',
+        extension: "mp3",
+        videoAvailable: false,
+        audioAvailable: true,
+        size: 0,
+        formattedSize: "N/A"
+      });
+    }
+
+    // Add images if this is a slideshow
+    if (result.images && Array.isArray(result.images)) {
+      result.images.forEach((imgUrl: string, i: number) => {
+        medias.push({
+          url: imgUrl,
+          quality: `image_${i + 1}_tikwm`,
+          extension: "jpeg",
+          videoAvailable: false,
+          audioAvailable: false,
+          size: 0,
+          formattedSize: "N/A"
+        });
+      });
+    }
+
+    if (medias.length > 0) {
+      logDebug(`Successfully parsed ${medias.length} media items using TikWM API`);
+      return {
+        url: originalUrl,
+        id: result.id,
+        title: result.title || "TikTok Video",
+        authorNickname: result.author?.nickname || result.author?.unique_id,
+        thumbnail: result.cover || result.origin_cover,
+        duration: result.duration,
+        sourceApiVersion: "tikwm",
+        medias,
+      };
+    }
+  } else {
+    logDebug(`TikWM API returned error or no data: ${JSON.stringify(data).substring(0, 200)}`);
+  }
+} catch (tikwmError) {
+  logError(`TikWM API fallback failed for ${originalUrl}`, tikwmError);
+}
+
+// If all attempts fail including TikWM, return the error
 return {
   error: typeof lastError === 'string' ? lastError : (lastError instanceof Error ? lastError.message : "Unknown error after trying all API versions."),
   url: originalUrl,
@@ -373,4 +657,19 @@ export function getAudioTrack(medias: Media[]): Media | null {
 // Prioritize audio tracks derived from v1/v2/v3 music properties
 const audio = medias.find(media => media.audioAvailable && !media.videoAvailable && media.quality.startsWith("audio_"));
 return audio || medias.find(media => media.audioAvailable && !media.videoAvailable) || null; // Broader fallback
+}
+
+// Function to extract video ID from TikTok URL
+function extractVideoId(url: string): string {
+  // Common formats:
+  // https://www.tiktok.com/@username/video/1234567890123456789
+  // https://vm.tiktok.com/ABCDEFG/
+
+  // Try to extract from standard URL format
+  const standardMatch = url.match(/\/video\/(\d+)/);
+  if (standardMatch && standardMatch[1]) return standardMatch[1];
+
+  // For shortened URLs, we need to follow redirects
+  // This is a simple implementation and might not always work
+  return ""; // Fallback to empty string if we can't extract ID
 }
