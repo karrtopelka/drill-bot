@@ -1,5 +1,5 @@
 import { Bot, Context, webhookCallback, InputFile } from "grammy";
-import { downloadTiktok, getBufferFromURL, filterVideo, filterAudio } from "./download-tiktok";
+import { downloadTiktok, filterImages, getAudioTrack, getBestVideoNoWatermark, getBufferFromURL } from "./download-tiktok";
 import debug from "debug";
 
 const debugLog = debug("bot:main");
@@ -90,103 +90,58 @@ bot.on("message:text", async (ctx: Context) => {
 
     logInfo(`Successfully fetched TikTok data with ${videoInfo.medias.length} media items`);
 
-    // Filter for videos with audio
-    const videos = filterVideo(videoInfo.medias);
+    const caption = `${videoInfo.title || '📷'} | @${videoInfo.authorNickname || 'Хтось'}`;
 
     // Filter for images (look for media with "image" in the quality field)
-    const images = videoInfo.medias.filter(m =>
-      m.quality.startsWith('image-') ||
-      (!m.videoAvailable && !m.audioAvailable)
-    );
+    const images = filterImages(videoInfo.medias);
+    const audioTrack = getAudioTrack(videoInfo.medias);
 
-    // Filter for audio-only media
-    const audios = filterAudio(videoInfo.medias);
-
-    logInfo(`Media breakdown - Videos: ${videos.length}, Images: ${images.length}, Audio: ${audios.length}`);
-
-    // Try to find non-watermarked video (higher quality)
-    const nonWatermarkedVideos = videos.filter(v => v.quality === "hd");
-    const bestVideo = nonWatermarkedVideos.length > 0 ? nonWatermarkedVideos[0] : videos[0];
-
-    // Check if we have a slideshow of images
-    if (images.length > 0) {
-      try {
-        logInfo(`Processing ${images.length} images from TikTok`);
-        // Download up to 10 images (Telegram media group limit)
-        const imagePromises = images.slice(0, 10).map(async (image, idx) => {
-          logInfo(`Downloading image ${idx + 1} from: ${image.url.substring(0, 100)}...`);
-          const buffer = await getBufferFromURL(image.url);
-          return new InputFile(buffer);
-        });
-
-        const imageFiles = await Promise.all(imagePromises);
-        logInfo(`Successfully downloaded ${imageFiles.length} images`);
-
-        // Create a media group of photos
-        const mediaGroup = imageFiles.map((file, index) => ({
-          type: "photo" as const,
-          media: file,
-          caption: index === 0 ? `🖼 ${videoInfo.title}` : undefined
-        }));
-
-        await ctx.replyWithMediaGroup(mediaGroup);
-        logInfo("Successfully sent image media group");
-
-        // If there's audio, send it separately
-        if (audios.length > 0) {
-          logInfo(`Downloading audio from: ${audios[0].url.substring(0, 100)}...`);
-          const audioBuffer = await getBufferFromURL(audios[0].url);
-          await ctx.replyWithAudio(new InputFile(audioBuffer), {
-            title: videoInfo.title,
-          });
-          logInfo("Successfully sent audio");
-        }
-      } catch (mediaError) {
-        logError("Error processing image slideshow", mediaError);
-        // Fallback to sending just the first image if media group fails
-        if (images.length > 0) {
-          logInfo("Falling back to single image mode");
-          const buffer = await getBufferFromURL(images[0].url);
-          await ctx.replyWithPhoto(new InputFile(buffer), {
-            caption: `🖼 ${videoInfo.title}`
-          });
-          logInfo("Successfully sent fallback image");
-
-          // If there's audio, still try to send it
-          if (audios.length > 0) {
-            logInfo("Attempting to send audio after fallback image");
-            const audioBuffer = await getBufferFromURL(audios[0].url);
-            await ctx.replyWithAudio(new InputFile(audioBuffer), {
-              title: videoInfo.title,
-            });
-            logInfo("Successfully sent audio after fallback");
-          }
-        } else {
-          throw new Error("Failed to process image slideshow");
-        }
-      }
-    } else if (videos.length > 0 && bestVideo) {
-      logInfo(`Downloading video from: ${bestVideo.url.substring(0, 100)}...`);
-      // Get the video buffer
-      const videoBuffer = await getBufferFromURL(bestVideo.url);
-      logInfo("Successfully downloaded video");
-
-      await ctx.replyWithVideo(new InputFile(videoBuffer), {
-        caption: `🎥 ${videoInfo.title}`,
-      });
-      logInfo("Successfully sent video");
-    } else if (audios.length > 0) {
-      logInfo(`Downloading audio from: ${audios[0].url.substring(0, 100)}...`);
-      // Get the audio buffer
-      const audioBuffer = await getBufferFromURL(audios[0].url);
-      logInfo("Successfully downloaded audio");
-
+    if (images.length > 0 && audioTrack) {
+      // This is likely a slideshow
+      debugLog(`Handling as slideshow: ${images.length} images, audio found.`);
+      // 1. Download all image buffers
+      const imageBuffers = await Promise.all(images.map(img => getBufferFromURL(img.url)));
+      // 2. Download audio buffer
+      const audioBuffer = await getBufferFromURL(audioTrack.url);
+      // 3. Send images as a media group with caption
+      const imageFiles = imageBuffers.map(imageBuffer => new InputFile(imageBuffer))
+      const mediaGroup = imageFiles.map((file, index) => ({
+        type: "photo" as const,
+        media: file,
+        caption: index === 0 ? caption : undefined
+      }));
+      await ctx.replyWithMediaGroup(mediaGroup);
+      // 4. Send audio separately with caption (or try to attach to media group
+      //    if API allows)
       await ctx.replyWithAudio(new InputFile(audioBuffer), {
         title: videoInfo.title,
       });
-      logInfo("Successfully sent audio");
     } else {
-      throw new Error("No suitable media found");
+      // This is likely a video post
+      const video = getBestVideoNoWatermark(videoInfo.medias);
+      if (video) {
+        debugLog(`Handling as video: ${video.url}`);
+        const videoBuffer = await getBufferFromURL(video.url);
+        // Send videoBuffer with caption
+        await ctx.replyWithVideo(new InputFile(videoBuffer), {
+          caption: caption,
+        });
+      } else {
+        logError("No suitable non-watermarked video found, or no video at all.");
+        // Potentially try sending the first available media if any, or an error.
+        // This case might happen if only audio was returned (like your previous log)
+        // or only watermarked video.
+        if (audioTrack && videoInfo.medias.length === 1) { // If only audio was found.
+          debugLog(`Handling as audio-only post: ${audioTrack.url}`);
+          const audioBuffer = await getBufferFromURL(audioTrack.url);
+          // Send audioBuffer with caption
+          await ctx.replyWithAudio(new InputFile(audioBuffer), {
+            title: videoInfo.title,
+          });
+        } else {
+          throw new Error("No suitable media found");
+        }
+      }
     }
 
     // Cleanup
