@@ -2,6 +2,23 @@ import { Downloader } from '@tobyg74/tiktok-api-dl';
 import { Buffer } from 'buffer';
 
 /**
+ * Detect if running in Vercel environment
+ * @returns {boolean} True if running in Vercel
+ */
+function isVercelEnvironment(): boolean {
+  return Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
+}
+
+/**
+ * Logs with prefix based on environment
+ * @param {string} message - Message to log
+ */
+function logDebug(message: string): void {
+  const prefix = isVercelEnvironment() ? '[VERCEL]' : '[LOCAL]';
+  console.log(`${prefix} ${message}`);
+}
+
+/**
  * Represents a media file.
  */
 export interface Media {
@@ -58,7 +75,28 @@ export interface TiktokVideo {
  * @throws {Error} - If an error occurs during the API request or processing.
  */
 export async function downloadTiktok(videoUrl: string): Promise<TiktokVideo> {
+  // Replace global fetch temporarily
+  const originalFetch = global.fetch;
+
   try {
+    // Add a custom fetch implementation with headers
+    const customFetch = async (url: string, init?: RequestInit) => {
+      const headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://www.tiktok.com/',
+        'sec-ch-ua': '"Google Chrome";v="123", "Not:A-Brand";v="8"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        ...(init?.headers || {})
+      };
+
+      return fetch(url, { ...init, headers });
+    };
+
+    global.fetch = customFetch as typeof fetch;
+
     const response = await Downloader(videoUrl, {
       version: "v1",
       showOriginalResponse: false
@@ -142,7 +180,6 @@ export async function downloadTiktok(videoUrl: string): Promise<TiktokVideo> {
       });
     }
 
-
     return {
       url: videoUrl,
       title: result.description || "Unknown Title",
@@ -172,7 +209,30 @@ export async function downloadTiktok(videoUrl: string): Promise<TiktokVideo> {
       source: "tiktok",
       medias: []
     };
+  } finally {
+    // Always restore original fetch even if there's an error
+    global.fetch = originalFetch;
   }
+}
+
+/**
+ * Attempts to fetch a URL through a proxy service when direct access fails.
+ * @param {string} url - The URL to fetch through proxy.
+ * @param {RequestInit} [init] - Optional fetch initialization options.
+ * @returns {Promise<Response>} The fetch response from the proxy.
+ */
+async function fetchThroughProxy(url: string, init?: RequestInit): Promise<Response> {
+  // Use allOrigins as a proxy service
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+
+  // Combine original headers with proxy-specific ones
+  const headers = {
+    ...(init?.headers || {}),
+    'Origin': 'https://allorigins.win',
+    'Referer': 'https://allorigins.win/'
+  };
+
+  return fetch(proxyUrl, { ...init, headers });
 }
 
 /**
@@ -184,32 +244,75 @@ export async function downloadTiktok(videoUrl: string): Promise<TiktokVideo> {
  * // Get the buffer
  * const buffer = await getBufferFromURL(result.medias[0].url);
  * @param {string} fileUrl - The URL to fetch the buffer from.
+ * @param {number} [retries=3] - Number of retry attempts for the request.
+ * @param {number} [delay=1000] - Delay between retries in milliseconds.
  * @returns {Promise<Buffer>} - A promise that resolves to the buffer of the file.
  * @throws {Error} - If an error occurs during fetching or buffer conversion.
  */
-export async function getBufferFromURL(fileUrl: string): Promise<Buffer> {
-  try {
-    const response = await fetch(fileUrl);
+export async function getBufferFromURL(fileUrl: string, retries = 3, delay = 1000): Promise<Buffer> {
+  let lastError: Error | null = null;
+  let useProxy = false;
 
-    if (!response.ok) {
-      let errorBodyText = 'Unknown error structure';
-      try {
-        errorBodyText = await response.text();
-      } catch (textError) {
-        // Ignore if can't read body
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      // Add a small delay between retries, except for first attempt
+      if (attempt > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+        // Try with proxy on second attempt
+        if (attempt === 1) {
+          useProxy = true;
+        }
       }
-      throw new Error(`Failed to fetch buffer with status ${response.status}: ${errorBodyText}`);
-    }
 
-    const arrayBuffer: ArrayBuffer = await response.arrayBuffer();
-    const buffer: Buffer = Buffer.from(arrayBuffer);
+      let response;
+      const headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'video/webm,video/mp4,video/*;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://www.tiktok.com/',
+        'Origin': 'https://www.tiktok.com'
+      };
 
-    return buffer;
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      throw new Error(`An error occurred in getBufferFromURL: ${error.message}`);
+      if (useProxy) {
+        logDebug(`Attempting fetch via proxy for: ${fileUrl}`);
+        response = await fetchThroughProxy(fileUrl, { headers });
+      } else {
+        response = await fetch(fileUrl, { headers });
+      }
+
+      if (!response.ok) {
+        let errorBodyText = 'Unknown error structure';
+        try {
+          errorBodyText = await response.text();
+        } catch (textError) {
+          // Ignore if can't read body
+        }
+        throw new Error(`Failed to fetch buffer with status ${response.status}: ${errorBodyText}`);
+      }
+
+      const arrayBuffer: ArrayBuffer = await response.arrayBuffer();
+      const buffer: Buffer = Buffer.from(arrayBuffer);
+
+      return buffer;
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        lastError = error;
+        // Log retry attempt if not the last one
+        if (attempt < retries) {
+          logDebug(`Retry attempt ${attempt + 1}/${retries} for URL: ${fileUrl} - Error: ${error.message}`);
+        }
+      } else {
+        lastError = new Error(`Unknown error: ${String(error)}`);
+      }
     }
-    throw new Error(`An unknown error occurred in getBufferFromURL: ${String(error)}`);
+  }
+
+  // If we got here, all retries failed
+  if (lastError) {
+    throw new Error(`Failed after ${retries} retries: ${lastError.message}`);
+  } else {
+    throw new Error(`Failed after ${retries} retries due to unknown error`);
   }
 }
 
