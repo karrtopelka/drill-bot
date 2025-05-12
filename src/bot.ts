@@ -1,7 +1,7 @@
 // This file is only used for local development
 import debug from "debug";
 import { Bot, InputFile } from "grammy";
-import { downloadTiktok, getBufferFromURL, filterVideo, filterAudio } from "../api/download-tiktok";
+import { downloadTiktok, getBufferFromURL, filterVideo, filterAudio } from "./download-tiktok";
 
 const debugLog = debug("bot:dev");
 

@@ -1,5 +1,5 @@
 import { Bot, Context, webhookCallback, InputFile } from "grammy";
-import { downloadTiktok, getBufferFromURL, filterVideo, filterAudio } from "./download-tiktok";
+import { downloadTiktok, getBufferFromURL, filterVideo, filterAudio } from "../src/download-tiktok";
 import debug from "debug";
 
 const debugLog = debug("bot:main");
@@ -164,5 +164,8 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
-// Export the webhook handler for Vercel
-export default webhookCallback(bot, "https");
+export const config = {
+  runtime: "edge",
+};
+
+export default webhookCallback(bot, "std/http");
