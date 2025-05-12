@@ -1,11 +1,10 @@
 {
   "version": 2,
   "public": true,
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "api/index.ts"
+  "functions": {
+    "api/bot.ts": {
+      "memory": 1024,
+      "maxDuration": 10
     }
-  ],
-  "redirects": [{ "source": "/", "destination": "/api", "permanent": false }]
+  }
 }

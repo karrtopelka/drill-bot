@@ -1,14 +1,17 @@
 {
   "compilerOptions": {
     "strict": true,
-    "target": "esnext",
+    "target": "ES2019",
     "moduleResolution": "node",
     "module": "commonjs",
     "skipLibCheck": true,
     "sourceMap": true,
-    "outDir": "public",
-    "lib": ["esnext", "dom"],
-    "resolveJsonModule": true
+    "outDir": "./build",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "lib": ["esnext", "dom"]
   },
+  "include": ["api/**/*", "src/**/*"],
   "exclude": ["node_modules"]
 }

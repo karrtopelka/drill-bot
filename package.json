@@ -1,16 +1,16 @@
 {
-  "name": "telegram-bot-vercel-boilerplate",
-  "version": "1.1.0",
-  "description": "Telegram Bot Vercel Boilerplate",
-  "main": "src/index.ts",
-  "author": "Mark Pavlov (https://github.com/sollidy)",
-  "homepage": "https://github.com/sollidy/telegram-bot-vercel-boilerplate",
+  "name": "drill-bot",
+  "version": "1.0.0",
+  "description": "Telegram Bot for downloading TikTok videos",
+  "main": "api/bot.ts",
+  "author": "Karrtopelka",
+  "homepage": "https://github.com/karrtopelka/drill-bot",
   "dependencies": {
     "@vercel/node": "^3.2.24",
     "cheerio": "^1.0.0",
     "dotenv-cli": "^7.4.2",
-    "ruhend-scraper": "^9.0.1",
-    "telegraf": "^4.16.3"
+    "grammy": "^1.36.1",
+    "ruhend-scraper": "^9.0.1"
   },
   "devDependencies": {
     "@types/debug": "^4.1.12",
@@ -23,10 +23,10 @@
     "typescript": "^5.6.3"
   },
   "scripts": {
-    "dev": "DEBUG=bot* dotenv -- nodemon -e ts -x ts-node src/index.ts",
-    "devWindows": "@powershell -Command $env:DEBUG='bot*';dotenv -- -- nodemon -e ts -x ts-node src/index.ts",
-    "build": "ncc build src/index.ts -o public -m",
-    "prettier": "prettier --write 'src/**/*.ts'",
+    "dev": "DEBUG=bot* dotenv -- nodemon -e ts -x ts-node src/bot.ts",
+    "devWindows": "@powershell -Command $env:DEBUG='bot*';dotenv -- -- nodemon -e ts -x ts-node src/bot.ts",
+    "build": "tsc",
+    "prettier": "prettier --write 'src/**/*.ts' 'api/**/*.ts'",
     "lint": "tsc --noemit"
   }
 }
