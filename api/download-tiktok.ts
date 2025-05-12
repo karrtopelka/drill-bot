@@ -82,13 +82,13 @@ export async function downloadTiktok(videoUrl: string): Promise<TiktokVideo> {
     // Add a custom fetch implementation with headers
     const customFetch = async (url: string, init?: RequestInit) => {
       const headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
         'Accept-Language': 'en-US,en;q=0.9',
         'Referer': 'https://www.tiktok.com/',
         'sec-ch-ua': '"Google Chrome";v="123", "Not:A-Brand";v="8"',
         'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"macOS"',
+        'sec-ch-ua-platform': '"Windows"',
         ...(init?.headers || {})
       };
 
@@ -97,14 +97,86 @@ export async function downloadTiktok(videoUrl: string): Promise<TiktokVideo> {
 
     global.fetch = customFetch as typeof fetch;
 
-    const response = await Downloader(videoUrl, {
-      version: "v1",
-      showOriginalResponse: false
-    });
+    let response;
+    let errors = [];
+    let resultAny = null;
 
-    if (response.status !== "success" || !response.result) {
+    // Method 1: Try using the library
+    try {
+      // Try different API versions if one fails
+      // Try v1 first
+      try {
+        logDebug("Trying TikTok API v1");
+        response = await Downloader(videoUrl, {
+          version: "v1",
+          showOriginalResponse: false
+        });
+        if (response.status === "success" && response.result) {
+          logDebug("TikTok API v1 succeeded");
+          resultAny = response.result as any;
+        } else {
+          errors.push(`v1: ${response.message || "Unknown error"}`);
+          throw new Error("v1 failed");
+        }
+      } catch (error) {
+        // Try v2 if v1 fails
+        logDebug("TikTok API v1 failed, trying v2");
+        try {
+          response = await Downloader(videoUrl, {
+            version: "v2",
+            showOriginalResponse: false
+          });
+
+          if (response.status === "success" && response.result) {
+            logDebug("TikTok API v2 succeeded");
+            resultAny = response.result as any;
+          } else {
+            errors.push(`v2: ${response.message || "Unknown error"}`);
+            throw new Error("v2 failed");
+          }
+        } catch (error) {
+          // Try v3 as last resort
+          logDebug("TikTok API v2 failed, trying v3");
+          try {
+            response = await Downloader(videoUrl, {
+              version: "v3",
+              showOriginalResponse: false
+            });
+
+            if (response.status === "success" && response.result) {
+              logDebug("TikTok API v3 succeeded");
+              resultAny = response.result as any;
+            } else {
+              errors.push(`v3: ${response.message || "Unknown error"}`);
+              throw new Error("All API versions failed");
+            }
+          } catch (error) {
+            // All library versions failed
+            throw new Error(`All TikTok API versions failed: ${errors.join(", ")}`);
+          }
+        }
+      }
+    } catch (libraryError) {
+      // Method 2: Try direct approach if library method failed
+      logDebug("All library methods failed, trying direct approach");
+      try {
+        // Try to get the HTML directly and extract the video URL
+        const directResult = await extractTikTokDirectLink(videoUrl);
+        if (directResult) {
+          logDebug("Direct approach succeeded");
+          resultAny = directResult;
+        } else {
+          throw new Error("Could not extract video information directly");
+        }
+      } catch (directError) {
+        // If both methods fail, throw the original library error
+        throw libraryError;
+      }
+    }
+
+    if (!resultAny) {
       return {
-        error: response.message || "Download failed",
+        error: "Failed to extract any video information",
         url: videoUrl,
         title: "Unknown Title",
         thumbnail: "",
@@ -115,27 +187,34 @@ export async function downloadTiktok(videoUrl: string): Promise<TiktokVideo> {
     }
 
     // Map the response to our TiktokVideo interface
-    const result = response.result;
     const media: Media[] = [];
 
-    // Add video
-    if (result.video) {
-      media.push({
-        url: Array.isArray(result.video.playAddr) ? result.video.playAddr[0] : result.video.playAddr || "",
-        quality: "hd",
-        extension: "mp4",
-        size: 0,
-        formattedSize: "Unknown",
-        videoAvailable: true,
-        audioAvailable: true,
-        chunked: false,
-        cached: false
-      });
+    // We need to use type assertions due to different API versions having different response formats
+    // First, add video content
+    if (resultAny.video) {
+      // Handle v1 format
+      const playAddr = Array.isArray(resultAny.video.playAddr)
+        ? resultAny.video.playAddr[0]
+        : resultAny.video.playAddr || "";
+
+      if (playAddr) {
+        media.push({
+          url: playAddr,
+          quality: "hd",
+          extension: "mp4",
+          size: 0,
+          formattedSize: "Unknown",
+          videoAvailable: true,
+          audioAvailable: true,
+          chunked: false,
+          cached: false
+        });
+      }
 
       // Add watermarked version if available
-      if (result.video.downloadAddr && result.video.downloadAddr[0]) {
+      if (resultAny.video.downloadAddr && Array.isArray(resultAny.video.downloadAddr) && resultAny.video.downloadAddr[0]) {
         media.push({
-          url: result.video.downloadAddr[0],
+          url: resultAny.video.downloadAddr[0],
           quality: "watermark",
           extension: "mp4",
           size: 0,
@@ -146,11 +225,53 @@ export async function downloadTiktok(videoUrl: string): Promise<TiktokVideo> {
           cached: false
         });
       }
+    } else if (resultAny.videoHD || resultAny.videoWatermark) {
+      // Handle v2/v3 format
+      if (resultAny.videoHD) {
+        media.push({
+          url: resultAny.videoHD,
+          quality: "hd",
+          extension: "mp4",
+          size: 0,
+          formattedSize: "Unknown",
+          videoAvailable: true,
+          audioAvailable: true,
+          chunked: false,
+          cached: false
+        });
+      }
+
+      if (resultAny.videoWatermark) {
+        media.push({
+          url: resultAny.videoWatermark,
+          quality: "watermark",
+          extension: "mp4",
+          size: 0,
+          formattedSize: "Unknown",
+          videoAvailable: true,
+          audioAvailable: true,
+          chunked: false,
+          cached: false
+        });
+      }
+    } else if (resultAny.directUrl) {
+      // Handle our direct extraction method
+      media.push({
+        url: resultAny.directUrl,
+        quality: "hd",
+        extension: "mp4",
+        size: 0,
+        formattedSize: "Unknown",
+        videoAvailable: true,
+        audioAvailable: true,
+        chunked: false,
+        cached: false
+      });
     }
 
     // Add images if available
-    if (result.images && result.images.length > 0) {
-      result.images.forEach((image, index) => {
+    if (resultAny.images && Array.isArray(resultAny.images) && resultAny.images.length > 0) {
+      resultAny.images.forEach((image: string, index: number) => {
         media.push({
           url: image,
           quality: `image-${index + 1}`,
@@ -166,25 +287,61 @@ export async function downloadTiktok(videoUrl: string): Promise<TiktokVideo> {
     }
 
     // Add music
-    if (result.music && result.music.playUrl && result.music.playUrl.length > 0) {
-      media.push({
-        url: result.music.playUrl[0],
-        quality: "128kbps",
-        extension: "mp3",
-        size: 0,
-        formattedSize: "Unknown",
-        videoAvailable: false,
-        audioAvailable: true,
-        chunked: false,
-        cached: false
-      });
+    if (resultAny.music) {
+      let musicUrl = null;
+
+      if (typeof resultAny.music === 'string') {
+        musicUrl = resultAny.music;
+      } else if (resultAny.music.playUrl) {
+        if (Array.isArray(resultAny.music.playUrl) && resultAny.music.playUrl.length > 0) {
+          musicUrl = resultAny.music.playUrl[0];
+        } else {
+          musicUrl = resultAny.music.playUrl;
+        }
+      }
+
+      if (musicUrl) {
+        media.push({
+          url: musicUrl,
+          quality: "128kbps",
+          extension: "mp3",
+          size: 0,
+          formattedSize: "Unknown",
+          videoAvailable: false,
+          audioAvailable: true,
+          chunked: false,
+          cached: false
+        });
+      }
     }
+
+    // Get title from the appropriate field based on API version
+    const title = resultAny.description || resultAny.desc || resultAny.title || "Unknown Title";
+
+    // Get thumbnail from the appropriate field
+    let thumbnail = resultAny.thumbnail || "";
+    if (!thumbnail) {
+      if (Array.isArray(resultAny.cover) && resultAny.cover.length > 0) {
+        thumbnail = resultAny.cover[0];
+      } else if (resultAny.video && resultAny.video.cover) {
+        if (Array.isArray(resultAny.video.cover) && resultAny.video.cover.length > 0) {
+          thumbnail = resultAny.video.cover[0];
+        } else {
+          thumbnail = resultAny.video.cover;
+        }
+      }
+    }
+
+    // Get duration
+    const duration = resultAny.duration || (resultAny.video && resultAny.video.duration
+      ? String(resultAny.video.duration)
+      : "0");
 
     return {
       url: videoUrl,
-      title: result.description || "Unknown Title",
-      thumbnail: result.cover?.[0] || result.video?.cover?.[0] || "",
-      duration: result.video?.duration ? String(result.video.duration) : "0",
+      title,
+      thumbnail,
+      duration,
       source: "tiktok",
       medias: media
     };
@@ -216,23 +373,145 @@ export async function downloadTiktok(videoUrl: string): Promise<TiktokVideo> {
 }
 
 /**
- * Attempts to fetch a URL through a proxy service when direct access fails.
- * @param {string} url - The URL to fetch through proxy.
- * @param {RequestInit} [init] - Optional fetch initialization options.
- * @returns {Promise<Response>} The fetch response from the proxy.
+ * Attempts to extract a direct no-watermark link from a TikTok URL
+ * @param videoUrl The TikTok video URL
+ * @returns Promise with the extracted information or null if failed
  */
-async function fetchThroughProxy(url: string, init?: RequestInit): Promise<Response> {
-  // Use allOrigins as a proxy service
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+async function extractTikTokDirectLink(videoUrl: string): Promise<any | null> {
+  try {
+    logDebug(`Attempting direct extraction for: ${videoUrl}`);
 
-  // Combine original headers with proxy-specific ones
-  const headers = {
-    ...(init?.headers || {}),
-    'Origin': 'https://allorigins.win',
-    'Referer': 'https://allorigins.win/'
-  };
+    // Custom headers that mimic a real browser
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-User': '?1',
+      'Sec-Fetch-Dest': 'document',
+      'Upgrade-Insecure-Requests': '1'
+    };
 
-  return fetch(proxyUrl, { ...init, headers });
+    // First get the HTML content
+    const response = await fetch(videoUrl, { headers });
+    if (!response.ok) {
+      return null;
+    }
+
+    const html = await response.text();
+
+    // Try to extract the video URL from the HTML
+    let directUrl = null;
+    let title = null;
+    let thumbnail = null;
+
+    // Look for the JSON data in the HTML
+    const dataMatch = html.match(/<script id="SIGI_STATE" type="application\/json">(.*?)<\/script>/s);
+    if (dataMatch && dataMatch[1]) {
+      try {
+        const jsonData = JSON.parse(dataMatch[1]);
+
+        // Extract video data from various possible locations in the JSON
+        if (jsonData.ItemModule) {
+          const itemKey = Object.keys(jsonData.ItemModule)[0];
+          if (itemKey) {
+            const item = jsonData.ItemModule[itemKey];
+
+            // Extract title
+            title = item.desc || "";
+
+            // Extract thumbnail
+            if (item.video && item.video.cover) {
+              thumbnail = item.video.cover;
+            }
+
+            // Extract video URL
+            if (item.video && item.video.playAddr) {
+              directUrl = item.video.playAddr;
+            }
+          }
+        }
+
+        // Try alternate paths if first method didn't work
+        if (!directUrl && jsonData.ItemList && jsonData.ItemList.video) {
+          directUrl = jsonData.ItemList.video.playAddr;
+        }
+
+        if (!directUrl && jsonData.videoData && jsonData.videoData.itemInfos) {
+          const video = jsonData.videoData.itemInfos.video;
+          if (video && video.urls && video.urls.length > 0) {
+            directUrl = video.urls[0];
+          }
+        }
+      } catch (e) {
+        logDebug(`Error parsing JSON data: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    if (!directUrl) {
+      // Try regex extraction as fallback
+      const urlMatch = html.match(/video":\{"url":"([^"]+)"/);
+      if (urlMatch && urlMatch[1]) {
+        directUrl = urlMatch[1].replace(/\\u002F/g, '/');
+      }
+    }
+
+    if (directUrl) {
+      logDebug(`Successfully extracted direct URL: ${directUrl.substring(0, 50)}...`);
+      return {
+        directUrl,
+        title,
+        thumbnail
+      };
+    }
+
+    return null;
+  } catch (error) {
+    logDebug(`Error during direct extraction: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+}
+
+/**
+ * Try to download from a TikTok URL through a specialized TikTok proxy
+ * @param url The TikTok URL to fetch
+ * @returns Response from the proxy
+ */
+async function fetchThroughTikTokProxy(url: string): Promise<Response> {
+  // List of TikTok proxy services to try
+  const proxyServices = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    `https://proxy.snigdhaos.org/?url=${encodeURIComponent(url)}`
+  ];
+
+  // Try each proxy service until one works
+  let lastError: Error | null = null;
+
+  for (const proxyUrl of proxyServices) {
+    try {
+      const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'video/webm,video/mp4,video/*;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      };
+
+      logDebug(`Trying proxy: ${proxyUrl.substring(0, 50)}...`);
+      const response = await fetch(proxyUrl, { headers });
+
+      if (response.ok) {
+        logDebug(`Successfully fetched through proxy: ${proxyUrl.substring(0, 50)}...`);
+        return response;
+      }
+
+      lastError = new Error(`Proxy ${proxyUrl.substring(0, 30)}... responded with ${response.status}`);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+
+  throw lastError || new Error('All TikTok proxies failed');
 }
 
 /**
@@ -252,6 +531,12 @@ async function fetchThroughProxy(url: string, init?: RequestInit): Promise<Respo
 export async function getBufferFromURL(fileUrl: string, retries = 3, delay = 1000): Promise<Buffer> {
   let lastError: Error | null = null;
   let useProxy = false;
+  let useTikTokProxy = false;
+
+  const isTikTokMediaUrl = fileUrl.includes('tiktokcdn.com') ||
+                          fileUrl.includes('tiktok.com') ||
+                          fileUrl.includes('muscdn.com') ||
+                          fileUrl.includes('musical.ly');
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -259,24 +544,39 @@ export async function getBufferFromURL(fileUrl: string, retries = 3, delay = 100
       if (attempt > 0) {
         await new Promise(resolve => setTimeout(resolve, delay));
 
-        // Try with proxy on second attempt
+        // Try with simple proxy on second attempt
         if (attempt === 1) {
           useProxy = true;
+        }
+
+        // Try with TikTok-specific proxy on third attempt
+        if (attempt === 2 && isTikTokMediaUrl) {
+          useTikTokProxy = true;
         }
       }
 
       let response;
       const headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
         'Accept': 'video/webm,video/mp4,video/*;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
         'Referer': 'https://www.tiktok.com/',
         'Origin': 'https://www.tiktok.com'
       };
 
-      if (useProxy) {
-        logDebug(`Attempting fetch via proxy for: ${fileUrl}`);
-        response = await fetchThroughProxy(fileUrl, { headers });
+      if (useTikTokProxy) {
+        logDebug(`Attempting fetch via TikTok proxy for: ${fileUrl.substring(0, 50)}...`);
+        response = await fetchThroughTikTokProxy(fileUrl);
+      } else if (useProxy) {
+        logDebug(`Attempting fetch via general proxy for: ${fileUrl.substring(0, 50)}...`);
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(fileUrl)}`;
+        response = await fetch(proxyUrl, {
+          headers: {
+            ...headers,
+            'Origin': 'https://allorigins.win',
+            'Referer': 'https://allorigins.win/'
+          }
+        });
       } else {
         response = await fetch(fileUrl, { headers });
       }
@@ -300,7 +600,7 @@ export async function getBufferFromURL(fileUrl: string, retries = 3, delay = 100
         lastError = error;
         // Log retry attempt if not the last one
         if (attempt < retries) {
-          logDebug(`Retry attempt ${attempt + 1}/${retries} for URL: ${fileUrl} - Error: ${error.message}`);
+          logDebug(`Retry attempt ${attempt + 1}/${retries} for URL: ${fileUrl.substring(0, 50)}... - Error: ${error.message}`);
         }
       } else {
         lastError = new Error(`Unknown error: ${String(error)}`);
