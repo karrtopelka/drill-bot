@@ -10,7 +10,7 @@ const token = process.env.BOT_TOKEN;
 if (!token) throw new Error("BOT_TOKEN is unset");
 
 // Create bot instance
-const bot = new Bot(token);
+export const bot = new Bot(token);
 
 // About command
 bot.command("about", async (ctx) => {
@@ -153,13 +153,15 @@ bot.on("message:text", async (ctx) => {
   }
 });
 
-// Start the bot
-debugLog("Bot is starting in development mode...");
-bot.start({
-  onStart: (botInfo) => {
-    debugLog(`Bot @${botInfo.username} started in development mode!`);
-  },
-});
+// Start the bot (only in development mode)
+if (process.env.NODE_ENV !== 'production') {
+  debugLog("Bot is starting in development mode...");
+  bot.start({
+    onStart: (botInfo) => {
+      debugLog(`Bot @${botInfo.username} started in development mode!`);
+    },
+  });
+}
 
 // Setup graceful stop
 process.once("SIGINT", () => bot.stop());

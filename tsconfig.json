@@ -13,6 +13,6 @@
     "lib": ["esnext", "dom"],
     "typeRoots": ["./node_modules/@types", "./src/types"]
   },
-  "include": ["api/**/*", "src/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules"]
 }
