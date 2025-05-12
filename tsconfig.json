@@ -10,7 +10,8 @@
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "lib": ["esnext", "dom"]
+    "lib": ["esnext", "dom"],
+    "typeRoots": ["./node_modules/@types", "./src/types"]
   },
   "include": ["api/**/*", "src/**/*"],
   "exclude": ["node_modules"]

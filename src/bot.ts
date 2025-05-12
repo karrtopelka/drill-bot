@@ -28,7 +28,8 @@ bot.command("about", async (ctx) => {
 
 // Handle TikTok links in messages
 bot.on("message:text", async (ctx) => {
-  const text = ctx.message.text;
+  const text = ctx.message?.text;
+  if (!text) return;
 
   // Check if message contains TikTok link
   if (!text.includes("vm.tiktok.com")) return;
