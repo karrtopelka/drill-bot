@@ -49,8 +49,9 @@ sourceApiVersion?: "v1" | "v2" | "v3";
 medias: Media[];
 }
 
-const TIKTOK_API_PROXY_URL = process.env.TIKTOK_API_PROXY_URL || undefined; // For Downloader
-const MEDIA_PROXY_URL_TEMPLATE = process.env.MEDIA_PROXY_URL_TEMPLATE || 'https://api.allorigins.win/raw?url={URL}'; // For getBufferFromURL, e.g., 'https://yourproxy.com/fetch?url={URL}' or 'https://api.allorigins.win/raw?url={URL}'
+// These proxies are reliable and free - consider using your own proxy service for production
+const TIKTOK_API_PROXY_URL = process.env.TIKTOK_API_PROXY_URL || 'https://cors-anywhere.herokuapp.com/'; // For Downloader
+const MEDIA_PROXY_URL_TEMPLATE = process.env.MEDIA_PROXY_URL_TEMPLATE || 'https://corsproxy.io/?{URL}'; // For getBufferFromURL
 
 /**
 * Downloads TikTok video information using a fallback mechanism through different API versions.
@@ -239,19 +240,23 @@ async function fetchWithProxyFallback(url: string, init?: RequestInit, forceProx
 
   const requestOptions: RequestInit = { ...init, headers };
 
-  if (forceProxy || (isVercelEnvironment() && !TIKTOK_API_PROXY_URL)) { // If in Vercel & no specific API proxy, assume media might need proxy too.
-      logDebug(`[Media Fetch] Attempting with proxy first for ${url.substring(0, 100)} (Vercel or forced)`);
+  // Always use proxy on Vercel or if forced
+  if (forceProxy || isVercelEnvironment()) {
+      logDebug(`[Media Fetch] Using proxy for ${url.substring(0, 100)} (Vercel or forced)`);
       try {
           return await fetch(fetchUrl(true), requestOptions);
       } catch (proxyError) {
           logError(`[Media Fetch] Proxy attempt failed for ${url.substring(0, 100)}`, proxyError);
-          // Fallback to direct if proxy fails (should not happen if proxy is primary choice)
-          logDebug(`[Media Fetch] Falling back to direct fetch for ${url.substring(0, 100)} after proxy error.`);
-          return fetch(fetchUrl(false), requestOptions);
+          // Fallback to direct only if not on Vercel
+          if (!isVercelEnvironment()) {
+              logDebug(`[Media Fetch] Falling back to direct fetch for ${url.substring(0, 100)} after proxy error.`);
+              return fetch(fetchUrl(false), requestOptions);
+          }
+          throw proxyError; // Re-throw if on Vercel, as direct fetch likely won't work
       }
   }
 
-  // Default: try direct, then proxy on failure
+  // Only reaches here for local development with no force proxy
   try {
       logDebug(`[Media Fetch] Attempting direct fetch for ${url.substring(0, 100)}`);
       const response = await fetch(fetchUrl(false), requestOptions);
@@ -291,9 +296,8 @@ for (let attempt = 0; attempt <= retries; attempt++) {
       logDebug(`[Media Buffer] Retrying (${attempt}/${retries}) fetch for: ${fileUrl.substring(0, 100)}`);
     }
 
-    // Use fetchWithProxyFallback. Force proxy on Vercel for subsequent attempts or if globally preferred.
-    // The first attempt (attempt === 0) might try direct first depending on fetchWithProxyFallback's internal logic.
-    const forceProxyForMedia = isVercelEnvironment() && attempt > 0;
+    // Always force proxy on Vercel
+    const forceProxyForMedia = isVercelEnvironment();
     logDebug(`[Media Buffer] Attempt ${attempt + 1} for ${fileUrl.substring(0, 100)}. Force proxy: ${forceProxyForMedia}`);
 
     const response = await fetchWithProxyFallback(fileUrl, { signal: controller.signal }, forceProxyForMedia);
