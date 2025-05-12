@@ -1,5 +1,5 @@
 import { Bot, Context, webhookCallback, InputFile } from "grammy";
-import { downloadTiktok, getBufferFromURL, filterVideo, filterAudio } from "../src/download-tiktok";
+import { downloadTiktok, getBufferFromURL, filterVideo, filterAudio } from "./download-tiktok";
 import debug from "debug";
 
 const debugLog = debug("bot:main");
