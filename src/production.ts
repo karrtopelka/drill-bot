@@ -1,5 +1,5 @@
-import { config } from 'dotenv';
-config();
+// Load env variables first
+require('dotenv').config();
 
 import { bot } from './bot';
 import debug from 'debug';

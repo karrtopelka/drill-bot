@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import { webhookCallback } from 'grammy';
 import debug from 'debug';
-import { bot } from './bot';  // Import the bot instance from bot.ts
+import { bot } from './bot';
 
 const debugLog = debug('bot:server');
 
