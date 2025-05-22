@@ -1,6 +1,7 @@
 import { Context } from "grammy";
 import { downloadTiktok, getBufferFromURL, filterVideo, filterAudio } from "./download-tiktok";
 import { InputFile } from "grammy";
+import { initialReplyMarkup } from './constants';
 
 export async function handleTiktokDownload(ctx: Context, link: string, loadingMsg: any) {
   try {
@@ -105,11 +106,15 @@ async function handleImageSlideshow(ctx: Context, images: any[], audios: any[], 
     const mediaGroup = imageFiles.map((file, index) => ({
       type: "photo" as const,
       media: file,
-      caption: index === 0 ? caption : undefined,
-      parse_mode: "MarkdownV2" as const
     }));
 
     await ctx.replyWithMediaGroup(mediaGroup);
+
+    // Send caption as a separate message
+    await ctx.reply(caption, {
+      parse_mode: "MarkdownV2",
+      reply_markup: initialReplyMarkup,
+    });
 
     // If there's audio, send it separately
     if (audios.length > 0) {
@@ -123,9 +128,11 @@ async function handleImageSlideshow(ctx: Context, images: any[], audios: any[], 
     // Fallback to sending just the first image if media group fails
     if (images.length > 0) {
       const buffer = await getBufferFromURL(images[0].url);
-      await ctx.replyWithPhoto(new InputFile(buffer), {
-        caption: caption + '\n(Не вийшло завантажити всі зображення, тикайте на лінку)',
-        parse_mode: "MarkdownV2"
+      await ctx.replyWithPhoto(new InputFile(buffer));
+      // Send caption and fallback message as a separate message
+      await ctx.reply(caption + '\n(Не вийшло завантажити всі зображення, тикайте на лінку)', {
+        parse_mode: "MarkdownV2",
+        reply_markup: initialReplyMarkup
       });
 
       // If there's audio, still try to send it
@@ -146,7 +153,8 @@ async function handleVideo(ctx: Context, video: any, caption: string) {
   const videoBuffer = await getBufferFromURL(video.url);
   await ctx.replyWithVideo(new InputFile(videoBuffer), {
     caption: caption,
-    parse_mode: "MarkdownV2"
+    parse_mode: "MarkdownV2",
+    reply_markup: initialReplyMarkup
   });
 }
 
@@ -154,6 +162,7 @@ async function handleAudio(ctx: Context, audio: any, caption: string) {
   const audioBuffer = await getBufferFromURL(audio.url);
   await ctx.replyWithAudio(new InputFile(audioBuffer), {
     title: 'Звук',
-    parse_mode: "MarkdownV2"
+    parse_mode: "MarkdownV2",
+    reply_markup: initialReplyMarkup
   });
 }

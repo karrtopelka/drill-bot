@@ -1,6 +1,8 @@
 import debug from "debug";
 import { Bot } from "grammy";
 import { handleTiktokDownload } from "./tiktok-handler";
+import { USER_EMOJIS } from './constants';
+import { ensureMessageReactionEntry } from './utils';
 
 const debugLog = debug("bot:dev");
 
@@ -51,6 +53,61 @@ bot.on("message:text", async (ctx) => {
       await ctx.api.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
     }
   }
+});
+
+bot.on("callback_query:data", async (ctx) => {
+  const reactionType = ctx.callbackQuery.data; // "react_like" or "react_dislike"
+  const userId = ctx.callbackQuery.from.username!;
+  const messageId = ctx.callbackQuery.message?.message_id;
+
+  if (!messageId) {
+    return;
+  }
+
+  // Use ensureMessageReactionEntry to get or create the entry
+  const currentReactions = ensureMessageReactionEntry(messageId);
+
+  // Update reaction state
+  if (reactionType === "react_like") {
+    if (currentReactions.likes.has(userId)) {
+      currentReactions.likes.delete(userId); // Unlike
+    } else {
+      currentReactions.likes.add(userId);
+      currentReactions.dislikes.delete(userId); // Remove from dislikes if switching
+    }
+  } else if (reactionType === "react_dislike") {
+    if (currentReactions.dislikes.has(userId)) {
+      currentReactions.dislikes.delete(userId); // Un-dislike
+    } else {
+      currentReactions.dislikes.add(userId);
+      currentReactions.likes.delete(userId); // Remove from likes if switching
+    }
+  }
+
+  // Generate new button texts
+  const likesText = "❤️" + (currentReactions.likes.size > 0 ? ": " : "") +
+                    [...currentReactions.likes].map(id => USER_EMOJIS[id] || '❓').join(" ");
+  const dislikesText = "💔" + (currentReactions.dislikes.size > 0 ? ": " : "") +
+                       [...currentReactions.dislikes].map(id => USER_EMOJIS[id] || '❓').join(" ");
+
+  // Update the keyboard
+  try {
+    await ctx.editMessageReplyMarkup({
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: likesText, callback_data: "react_like" },
+            { text: dislikesText, callback_data: "react_dislike" },
+          ],
+        ],
+      },
+    });
+  } catch (error) {
+    // Handle potential errors, e.g., message not modified if keyboard is the same
+    console.error("Error editing message reply markup:", error);
+  }
+
+  await ctx.answerCallbackQuery(); // Acknowledge the callback
 });
 
 // Start the bot (only in development mode)
