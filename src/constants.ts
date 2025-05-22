@@ -1,9 +1,9 @@
 export const USER_EMOJIS: Record<string, string> = {
-  'karrtopelka': '🦄',
+  'karrtopelka': '🏳‍🌈',
   'dar4yk': '🐒',
-  'ohordon': '🐳',
-  'splashess': '👾',
-  'V_Ulff': '🧌'
+  'ohordon': '🗿',
+  'splashess': '👨‍🦽',
+  'V_Ulff': '🔳'
 };
 
 export const MAX_REACTION_ENTRIES = 500;
