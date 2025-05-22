@@ -105,7 +105,8 @@ async function handleImageSlideshow(ctx: Context, images: any[], audios: any[], 
     const mediaGroup = imageFiles.map((file, index) => ({
       type: "photo" as const,
       media: file,
-      caption: index === 0 ? caption : undefined
+      caption: index === 0 ? caption : undefined,
+      parse_mode: "MarkdownV2" as const
     }));
 
     await ctx.replyWithMediaGroup(mediaGroup);
@@ -114,8 +115,7 @@ async function handleImageSlideshow(ctx: Context, images: any[], audios: any[], 
     if (audios.length > 0) {
       const audioBuffer = await getBufferFromURL(audios[0].url);
       await ctx.replyWithAudio(new InputFile(audioBuffer), {
-        title: caption,
-        parse_mode: "MarkdownV2"
+        title: 'Звук',
       });
     }
   } catch (mediaError) {
@@ -124,7 +124,7 @@ async function handleImageSlideshow(ctx: Context, images: any[], audios: any[], 
     if (images.length > 0) {
       const buffer = await getBufferFromURL(images[0].url);
       await ctx.replyWithPhoto(new InputFile(buffer), {
-        caption: caption,
+        caption: caption + '\n(Не вийшло завантажити всі зображення, тикайте на лінку)',
         parse_mode: "MarkdownV2"
       });
 
@@ -132,7 +132,7 @@ async function handleImageSlideshow(ctx: Context, images: any[], audios: any[], 
       if (audios.length > 0) {
         const audioBuffer = await getBufferFromURL(audios[0].url);
         await ctx.replyWithAudio(new InputFile(audioBuffer), {
-          title: caption,
+          title: 'Звук',
           parse_mode: "MarkdownV2"
         });
       }
@@ -153,7 +153,7 @@ async function handleVideo(ctx: Context, video: any, caption: string) {
 async function handleAudio(ctx: Context, audio: any, caption: string) {
   const audioBuffer = await getBufferFromURL(audio.url);
   await ctx.replyWithAudio(new InputFile(audioBuffer), {
-    title: caption,
+    title: 'Звук',
     parse_mode: "MarkdownV2"
   });
 }
