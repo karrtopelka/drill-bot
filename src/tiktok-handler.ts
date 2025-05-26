@@ -1,13 +1,22 @@
 import { Context } from "grammy";
 import { downloadTiktok, getBufferFromURL, filterVideo, filterAudio } from "./download-tiktok";
 import { InputFile } from "grammy";
-import { initialReplyMarkup } from './constants';
+import { initialReplyMarkup, SPINNER_EMOJIS } from './constants';
+
+let spinnerIndex = 0;
+
+const getNextSpinnerEmoji = () => {
+  const emoji = SPINNER_EMOJIS[spinnerIndex];
+  spinnerIndex = (spinnerIndex + 1) % SPINNER_EMOJIS.length;
+  return emoji;
+}
+
 
 export async function handleTiktokDownload(ctx: Context, link: string, loadingMsg: any) {
   try {
     // Get video info using our custom implementation
     const videoInfo = await downloadTiktok(link);
-    await ctx.api.editMessageText(ctx.chat!.id, loadingMsg.message_id, "⏳ Завантажую відео...\n⬛️⬜️⬜️⬜️⬜️");
+    await ctx.api.editMessageText(ctx.chat!.id, loadingMsg.message_id, `📓 Отримання метаданих... (20%)\n${getNextSpinnerEmoji()}⬜️⬜️⬜️⬜️`);
 
     // Check if we have proper response structure
     if (videoInfo.error) {
@@ -17,22 +26,22 @@ export async function handleTiktokDownload(ctx: Context, link: string, loadingMs
     if (!videoInfo.medias || !Array.isArray(videoInfo.medias) || videoInfo.medias.length === 0) {
       throw new Error("Invalid response format or no media available");
     }
-    await ctx.api.editMessageText(ctx.chat!.id, loadingMsg.message_id, "⏳ Завантажую відео...\n⬛️⬛️⬜️⬜️⬜️");
+    await ctx.api.editMessageText(ctx.chat!.id, loadingMsg.message_id, `🔍 Пошук найкращого відеопотоку... (40%)\n🟩🟩${getNextSpinnerEmoji()}⬜️⬜️`);
 
     // Filter for videos with audio
     const videos = filterVideo(videoInfo.medias);
-    await ctx.api.editMessageText(ctx.chat!.id, loadingMsg.message_id, "⏳ Завантажую відео...\n⬛️⬛️⬛️⬜️⬜️");
+    await ctx.api.editMessageText(ctx.chat!.id, loadingMsg.message_id, `📥 Завантаження відеофайлу... (60%)\n🟩🟩🟩${getNextSpinnerEmoji()}⬜️`);
 
     // Filter for images (look for media with "image" in the quality field)
     const images = videoInfo.medias.filter(m =>
       m.quality.startsWith('image-') ||
       (!m.videoAvailable && !m.audioAvailable)
     );
-    await ctx.api.editMessageText(ctx.chat!.id, loadingMsg.message_id, "⏳ Завантажую відео...\n⬛️⬛️⬛️⬛️⬜️");
+    await ctx.api.editMessageText(ctx.chat!.id, loadingMsg.message_id, `🎨 Перевірка на слайдшоу... (80%)\n🟩🟩🟩🟩${getNextSpinnerEmoji()}⬜️`);
 
     // Filter for audio-only media
     const audios = filterAudio(videoInfo.medias);
-    await ctx.api.editMessageText(ctx.chat!.id, loadingMsg.message_id, "⏳ Завантажую відео...\n⬛️⬛️⬛️⬛️⬛️");
+    await ctx.api.editMessageText(ctx.chat!.id, loadingMsg.message_id, `🎉 Відео завантажено! (100%). Готую до відправки...\n🟩🟩🟩🟩🟩`);
 
     // Try to find non-watermarked video (higher quality)
     const nonWatermarkedVideos = videos.filter(v => v.quality === "hd");
@@ -86,7 +95,9 @@ export async function handleTiktokDownload(ctx: Context, link: string, loadingMs
     if (loadingMsg) {
       await ctx.api.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
     }
-    const errorMsg = await ctx.reply("❌ Помилка при завантаженні відео");
+    const errorMsg = await ctx.reply("❌ Помилка при завантаженні відео", {
+      link_preview_options: { is_disabled: true }
+    });
     await new Promise((resolve) => setTimeout(resolve, 3000));
     await ctx.api.deleteMessage(ctx.chat!.id, errorMsg.message_id);
   }
@@ -114,13 +125,14 @@ async function handleImageSlideshow(ctx: Context, images: any[], audios: any[], 
     await ctx.reply(caption, {
       parse_mode: "MarkdownV2",
       reply_markup: initialReplyMarkup,
+      link_preview_options: { is_disabled: true }
     });
 
     // If there's audio, send it separately
     if (audios.length > 0) {
       const audioBuffer = await getBufferFromURL(audios[0].url);
       await ctx.replyWithAudio(new InputFile(audioBuffer), {
-        title: 'Звук',
+        title: 'Звук'
       });
     }
   } catch (mediaError) {
@@ -132,7 +144,8 @@ async function handleImageSlideshow(ctx: Context, images: any[], audios: any[], 
       // Send caption and fallback message as a separate message
       await ctx.reply(caption + '\n(Не вийшло завантажити всі зображення, тикайте на лінку)', {
         parse_mode: "MarkdownV2",
-        reply_markup: initialReplyMarkup
+        reply_markup: initialReplyMarkup,
+        link_preview_options: { is_disabled: true }
       });
 
       // If there's audio, still try to send it
@@ -154,7 +167,7 @@ async function handleVideo(ctx: Context, video: any, caption: string) {
   await ctx.replyWithVideo(new InputFile(videoBuffer), {
     caption: caption,
     parse_mode: "MarkdownV2",
-    reply_markup: initialReplyMarkup
+    reply_markup: initialReplyMarkup,
   });
 }
 

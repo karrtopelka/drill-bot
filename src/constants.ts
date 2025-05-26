@@ -18,3 +18,5 @@ export const initialReplyMarkup = {
     ],
   ],
 };
+
+export const SPINNER_EMOJIS = ['⢿', '⣻', '⣽', '⣾', '⣷', '⣯', '⣟', '⡿']

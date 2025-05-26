@@ -86,9 +86,9 @@ bot.on("callback_query:data", async (ctx) => {
 
   // Generate new button texts
   const likesText = "❤️" + (currentReactions.likes.size > 0 ? ": " : "") +
-                    [...currentReactions.likes].map(id => USER_EMOJIS[id] || '❓').join(" ");
+                    [...currentReactions.likes].map(id => USER_EMOJIS[id] || '❓').join("");
   const dislikesText = "💔" + (currentReactions.dislikes.size > 0 ? ": " : "") +
-                       [...currentReactions.dislikes].map(id => USER_EMOJIS[id] || '❓').join(" ");
+                       [...currentReactions.dislikes].map(id => USER_EMOJIS[id] || '❓').join("");
 
   // Update the keyboard
   try {
