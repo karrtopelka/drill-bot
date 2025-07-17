@@ -145,8 +145,8 @@ export async function downloadTiktok(videoUrl: string): Promise<TiktokVideo> {
 
     return {
       url: videoUrl,
-      title: result.description || "Unknown Title",
-      thumbnail: result.cover?.[0] || result.video?.cover?.[0] || "",
+      title: result.desc || "Unknown Title",
+      thumbnail: result.video?.cover?.[0] || result.music?.coverLarge?.[0] || "",
       duration: result.video?.duration ? String(result.video.duration) : "0",
       source: "tiktok",
       medias: media
