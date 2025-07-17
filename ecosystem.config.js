@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: 'telegram-bot',
-      script: 'npm',
+      script: 'pnpm',
       args: 'start',
       env: {
         NODE_ENV: 'production',
