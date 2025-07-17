@@ -34,7 +34,7 @@ bot.command("ping", async (ctx) => {
   await ctx.reply(message);
 });
 
-// Poll generation command, TODO: uncomment when ready to release.
+// Poll generation command. TODO: uncomment when ready to release.
 // bot.command("poll", handlePollCommand);
 
 // Handle TikTok links in messages

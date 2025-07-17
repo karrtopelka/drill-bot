@@ -2,18 +2,23 @@
 require('dotenv').config();
 
 import { bot } from './bot';
-import debug from 'debug';
-
-const debugLog = debug('bot:production');
 
 // Start the bot in long-polling mode
-debugLog('Bot is starting in production mode (polling)...');
+console.log('🤖 Bot is starting in production mode (polling)...');
 bot.start({
   onStart: (botInfo) => {
-    debugLog(`Bot @${botInfo.username} started in production mode!`);
+    console.log(`✅ Bot @${botInfo.username} started in production mode!`);
+    console.log(`📅 Started at: ${new Date().toISOString()}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
   },
 });
 
 // Setup graceful stop
-process.once('SIGINT', () => bot.stop());
-process.once('SIGTERM', () => bot.stop());
+process.once('SIGINT', () => {
+  console.log('🛑 Received SIGINT, stopping bot...');
+  bot.stop();
+});
+process.once('SIGTERM', () => {
+  console.log('🛑 Received SIGTERM, stopping bot...');
+  bot.stop();
+});
