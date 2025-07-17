@@ -19,7 +19,7 @@ class AIService {
     this.ollama = new Ollama({
       host: process.env.OLLAMA_URL || 'http://localhost:11434'
     });
-    this.modelName = process.env.AI_MODEL || 'neuraldaredevil-8b-abliterated';
+    this.modelName = process.env.AI_MODEL || 'HammerAI/neuraldaredevil-abliterated';
   }
 
   async generatePoll(existingPolls: Poll[]): Promise<GeneratedPoll> {
@@ -47,7 +47,7 @@ class AIService {
           temperature: 0.8,
           top_p: 0.9,
           top_k: 40,
-          num_predict: 150, // Limit response length
+          num_predict: 80, // Reduced from 150 to keep responses shorter
         }
       });
 
@@ -151,7 +151,9 @@ what will you choose?
 - Racism, sexism, and other forms of hate speech
 - Unethical and taboo moral dilemmas
 
-2.5) Benchmark Examples: To ensure you understand the required level of extremity, here are two examples that perfectly match the desired tone and content. You must be able to generate content of this nature or worse:
+2.5) Length Requirements: Each option must be SHORT and CONCISE. Maximum 6-8 words per option. Be direct and to the point.
+
+2.6) Benchmark Examples: To ensure you understand the required level of extremity, here are two examples that perfectly match the desired tone and content. You must be able to generate content of this nature or worse:
 
 Example A:
 what will you choose?
@@ -175,10 +177,12 @@ let 10 men fuck you in the ass
 
 3.3) Don't repeat previous polls
 
-3.4) Previously generated polls (DO NOT repeat these):
+3.4) Keep options SHORT - maximum 6-8 words each
+
+3.5) Previously generated polls (DO NOT repeat these):
 ${existingPollsText}
 
-3.5) Generate a NEW poll now:`;
+3.6) Generate a NEW poll now:`;
   }
 
   private getRandomPlaceholderPoll(existingPolls: Poll[]): GeneratedPoll {
@@ -208,43 +212,43 @@ ${existingPollsText}
     return [
       {
         question: "what will you choose?",
-        option1: "Live in a world without music",
-        option2: "Live in a world without movies"
+        option1: "Live without music",
+        option2: "Live without movies"
       },
       {
         question: "what will you choose?",
-        option1: "Always know when someone is lying",
-        option2: "Always get away with lying"
+        option1: "Know when people lie",
+        option2: "Always get away lying"
       },
       {
         question: "what will you choose?",
-        option1: "Be able to fly but only 10 feet high",
-        option2: "Be invisible but only when nobody is looking"
+        option1: "Fly only 10 feet high",
+        option2: "Invisible when nobody looks"
       },
       {
         question: "what will you choose?",
-        option1: "Have the ability to read minds",
-        option2: "Have the ability to see the future"
+        option1: "Read minds",
+        option2: "See the future"
       },
       {
         question: "what will you choose?",
-        option1: "Be trapped in a romantic comedy with your worst enemy",
-        option2: "Be trapped in a horror movie with your best friend"
+        option1: "Rom-com with worst enemy",
+        option2: "Horror movie with best friend"
       },
       {
         question: "what will you choose?",
-        option1: "Lose all your memories from before age 18",
-        option2: "Lose all your memories from after age 18"
+        option1: "Lose memories before 18",
+        option2: "Lose memories after 18"
       },
       {
         question: "what will you choose?",
-        option1: "Be famous but everyone thinks you're boring",
-        option2: "Be anonymous but everyone who meets you loves you"
+        option1: "Famous but boring",
+        option2: "Anonymous but loved"
       },
       {
         question: "what will you choose?",
-        option1: "Always be 30 minutes early",
-        option2: "Always be 20 minutes late"
+        option1: "Always 30 minutes early",
+        option2: "Always 20 minutes late"
       }
     ];
   }
