@@ -1,5 +1,6 @@
 import debug from "debug";
 import { Bot } from "grammy";
+import type { InlineQueryResultArticle } from "grammy/types";
 import { USER_EMOJIS, USER_IDS } from './constants';
 import { databaseService } from './services/database';
 import { handleTiktokDownload } from "./tiktok-handler";
@@ -26,12 +27,48 @@ bot.command("about", async (ctx) => {
   await ctx.reply(message, { parse_mode: "MarkdownV2" });
 });
 
-// Ping all users command.
-bot.command("ping", async (ctx) => {
-  const userMentions = Object.values(USER_IDS).map(userId => `@${userId}`).join(" ");
-  const message = `${userMentions}`;
-  debugLog(`Triggered "ping" command with message \n${message}`);
-  await ctx.reply(message);
+// Inline query handler for @botname ping
+bot.on("inline_query", async (ctx) => {
+  const query = ctx.inlineQuery.query.toLowerCase().trim();
+
+  // Handle ping queries
+  if (query === "ping" || query.includes("ping")) {
+    const friendMentions = Object.values(USER_IDS).map(userId => `@${userId}`).join(" ");
+
+    const results: InlineQueryResultArticle[] = [{
+      type: "article",
+      id: "ping_friends",
+      title: "🔔 All",
+      description: "Тегнути всіх",
+      input_message_content: {
+        message_text: friendMentions
+      }
+    }];
+
+    await ctx.answerInlineQuery(results, { cache_time: 30 });
+    return;
+  }
+
+  // Default when no query - show the ping option
+  if (query === "" || query.length < 2) {
+    const friendMentions = Object.values(USER_IDS).map(userId => `@${userId}`).join(" ");
+
+    const results: InlineQueryResultArticle[] = [{
+      type: "article",
+      id: "ping_option",
+      title: "🔔 All",
+      description: "Тегнути всіх",
+      input_message_content: {
+        message_text: friendMentions
+      }
+    }];
+
+    await ctx.answerInlineQuery(results, { cache_time: 60 });
+    return;
+  }
+
+  // No matching results for other queries
+  await ctx.answerInlineQuery([], { cache_time: 10 });
 });
 
 // Poll generation command. TODO: uncomment when ready to release.
