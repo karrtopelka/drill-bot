@@ -1,9 +1,10 @@
 import debug from "debug";
-import { Bot } from "grammy";
+import { Bot, InputFile } from "grammy";
 import type { InlineQueryResultArticle } from "grammy/types";
 import { USER_EMOJIS, USER_IDS } from './constants';
 // import { handlePollCommand } from './poll-handler';
 import { databaseService } from './services/database';
+import { myInstantsService } from './services/myinstants';
 import { handleTiktokDownload } from "./tiktok-handler";
 import { ensureMessageReactionEntry } from './utils';
 // import { ensurePollVoteEntry } from './utils';
@@ -22,6 +23,18 @@ databaseService.init().catch(err => {
   console.error('Failed to initialize database:', err);
 });
 
+// Add error handler to prevent crashes
+bot.catch((err) => {
+  const ctx = err.ctx;
+  console.error(`Error while handling update ${ctx.update.update_id}:`);
+  const e = err.error;
+  if (e instanceof Error && e.message.includes("query is too old")) {
+    console.error("Inline query timeout - this is normal for slow responses");
+  } else {
+    console.error("Unknown error:", e);
+  }
+});
+
 // About command
 bot.command("about", async (ctx) => {
   const message = `*DRILL BOT*`;
@@ -29,7 +42,7 @@ bot.command("about", async (ctx) => {
   await ctx.reply(message, { parse_mode: "MarkdownV2" });
 });
 
-// Inline query handler for @botname ping
+// Inline query handler for @botname ping and sound search
 bot.on("inline_query", async (ctx) => {
   const query = ctx.inlineQuery.query.toLowerCase().trim();
 
@@ -64,6 +77,43 @@ bot.on("inline_query", async (ctx) => {
     }];
 
     await ctx.answerInlineQuery(results, { cache_time: 30 });
+    return;
+  }
+
+  // Handle sound search queries
+  if (query.length >= 2) {
+    try {
+      debugLog(`Searching for sounds: ${query}`);
+
+      // Add timeout to prevent Telegram timeout errors
+      const searchPromise = myInstantsService.searchSounds(query);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Search timeout')), 3000)
+      );
+
+      const sounds = await Promise.race([searchPromise, timeoutPromise]);
+
+      if (sounds.length > 0) {
+        const results: InlineQueryResultArticle[] = sounds.map((sound, index) => ({
+          type: "article",
+          id: `voice_${index}`, // Use voice_ prefix to identify voice messages
+          title: `🎤 ${sound.name}`,
+          input_message_content: {
+            message_text: `🎤 ${sound.name}\n📱 Converting to voice message...`
+          }
+        }));
+
+        await ctx.answerInlineQuery(results, { cache_time: 300 }); // Cache for 5 minutes
+        return;
+      }
+    } catch (error) {
+      console.error("Error searching sounds:", error);
+      debugLog(`Sound search failed for query: ${query}`);
+      // Don't fail silently - answer with empty results
+    }
+
+    // Always answer, even if search failed
+    await ctx.answerInlineQuery([], { cache_time: 10 });
     return;
   }
 
@@ -105,15 +155,55 @@ bot.on("inline_query", async (ctx) => {
 bot.command('ping', async (ctx) => {
   const friendMentions = Object.values(USER_IDS).map(userId => `@${userId}`).join(" ");
   await ctx.reply(friendMentions, { parse_mode: "MarkdownV2" });
+  await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id);
+});
+
+bot.command('all', async (ctx) => {
+  const friendMentions = Object.values(USER_IDS).map(userId => `@${userId}`).join(" ");
+  await ctx.reply(friendMentions, { parse_mode: "MarkdownV2" });
+  await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id);
 });
 
 // Poll generation command - COMMENTED OUT FOR NOW
 // bot.command("poll", handlePollCommand);
 
-// Handle TikTok links in messages
 bot.on("message:text", async (ctx) => {
   const text = ctx.message?.text;
   if (!text) return;
+
+  // Check if this is a voice conversion request from inline query
+  const voicePattern = /🎤 (.+)\n📱 Converting to voice message\.\.\./;
+  const voiceMatch = text.match(voicePattern);
+
+  if (voiceMatch) {
+    const searchQuery = voiceMatch[1];
+    debugLog(`Converting sound to voice for query: ${searchQuery}`);
+
+    try {
+      // Delete the original message immediately
+      await ctx.api.deleteMessage(ctx.chat!.id, ctx.message!.message_id);
+
+      // Search for sounds and convert directly
+      const sounds = await myInstantsService.searchSounds(searchQuery);
+
+      if (sounds.length > 0) {
+        const firstSound = sounds[0];
+
+        // Convert and send as voice message
+        const { buffer, duration } = await myInstantsService.getSoundAsVoice(firstSound.playUrl);
+
+        // Send as voice message
+        const voiceFile = new InputFile(buffer, `${searchQuery.replace(/[^a-zA-Z0-9]/g, '_')}.ogg`);
+        await ctx.replyWithVoice(voiceFile, {
+          duration: duration,
+        });
+      }
+    } catch (error) {
+      console.error("Error converting to voice:", error);
+      // Silently fail - message already deleted
+    }
+    return;
+  }
 
   // Check if message contains TikTok link
   const tiktokPattern = /(https?:\/\/)?(www\.)?(vm\.tiktok\.com|tiktok\.com)\/\S+/i;
